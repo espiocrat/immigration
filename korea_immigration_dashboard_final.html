@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>출입국 심사 통계 대시보드</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root { --r: 10px; }
+[data-theme="light"] {
+  --bg:#f7f8fa; --surface:#fff; --surface-2:#f0f2f5; --border:#e4e7ec; --border-strong:#d0d5dd;
+  --text:#1a1f2b; --text-2:#667085; --text-3:#98a2b3;
+  --accent:#2563eb; --accent-soft:#eff4ff; --green:#099268; --green-soft:#e6f4ef;
+  --amber:#c8860a; --amber-soft:#fdf4e3; --red:#d64545; --red-soft:#fcebeb;
+  --shadow:0 1px 3px rgba(16,24,40,.06),0 1px 2px rgba(16,24,40,.04); --map-land:#e8ebf0; --map-stroke:#cbd2dd;
+}
+[data-theme="dark"] {
+  --bg:#0d1117; --surface:#161b22; --surface-2:#1c2333; --border:#262d3a; --border-strong:#333c4d;
+  --text:#e6edf3; --text-2:#8b949e; --text-3:#5a636e;
+  --accent:#4d8bf5; --accent-soft:#15233f; --green:#2dd4a7; --green-soft:#0d2620;
+  --amber:#e8a830; --amber-soft:#2a1f0a; --red:#f0635a; --red-soft:#2a1011;
+  --shadow:0 1px 3px rgba(0,0,0,.4); --map-land:#1c2333; --map-stroke:#3a4453;
+}
+* { box-sizing:border-box; margin:0; padding:0; }
+html { -webkit-text-size-adjust:100%; }
+body { background:var(--bg); color:var(--text); font-family:'Inter',-apple-system,sans-serif;
+  font-size:14px; line-height:1.5; -webkit-font-smoothing:antialiased; transition:background .3s,color .3s; }
+.mono { font-family:'IBM Plex Mono',monospace; }
+.nav { height:56px; border-bottom:1px solid var(--border); background:var(--surface);
+  display:flex; align-items:center; justify-content:space-between; padding:0 24px; position:sticky; top:0; z-index:100; }
+.nav-brand { display:flex; align-items:center; gap:10px; min-width:0; }
+.nav-mark { width:30px; height:30px; border-radius:8px; background:var(--accent);
+  display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:15px; flex-shrink:0; }
+.nav-title { font-weight:600; font-size:15px; letter-spacing:-.01em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.nav-title span { color:var(--text-3); font-weight:400; font-size:12px; display:block; line-height:1.2; }
+.nav-actions { display:flex; align-items:center; gap:8px; flex-shrink:0; }
+.icon-btn { height:34px; padding:0 12px; border-radius:8px; border:1px solid var(--border); background:var(--surface);
+  color:var(--text-2); font-size:13px; cursor:pointer; display:flex; align-items:center; gap:6px;
+  font-family:'Inter',sans-serif; transition:all .15s; white-space:nowrap; }
+.icon-btn:hover { border-color:var(--border-strong); color:var(--text); }
+.icon-btn svg { width:16px; height:16px; }
+.lang-toggle { display:flex; border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+.lang-toggle button { height:34px; padding:0 12px; border:none; background:var(--surface); color:var(--text-3);
+  font-size:12px; cursor:pointer; font-family:'IBM Plex Mono',monospace; transition:all .15s; }
+.lang-toggle button.active { background:var(--accent); color:#fff; }
+.notice { background:var(--amber-soft); border-bottom:1px solid var(--border); padding:8px 24px;
+  font-size:12px; color:var(--amber); display:flex; align-items:center; gap:8px; }
+.notice svg { flex-shrink:0; }
+.container { max-width:1280px; margin:0 auto; padding:24px; }
+.page-head { margin-bottom:24px; }
+.page-head h1 { font-size:22px; font-weight:700; letter-spacing:-.02em; margin-bottom:4px; }
+.page-head p { color:var(--text-2); font-size:13px; }
+.kpi-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:24px; }
+.kpi { background:var(--surface); border:1px solid var(--border); border-radius:var(--r); padding:18px; box-shadow:var(--shadow); }
+.kpi-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; gap:8px; }
+.kpi-name { font-size:12px; color:var(--text-2); font-weight:500; }
+.kpi-tag { font-size:10px; padding:2px 7px; border-radius:20px; font-weight:600; font-family:'IBM Plex Mono',monospace; white-space:nowrap; }
+.tag-real { background:var(--green-soft); color:var(--green); }
+.tag-pred { background:var(--accent-soft); color:var(--accent); }
+.tag-warn { background:var(--red-soft); color:var(--red); }
+.kpi-value { font-size:28px; font-weight:700; letter-spacing:-.02em; line-height:1; }
+.kpi-delta { font-size:12px; margin-top:8px; color:var(--text-2); }
+.kpi-delta .up { color:var(--green); font-weight:600; }
+.grid-main { display:grid; grid-template-columns:1.6fr 1fr; gap:16px; margin-bottom:16px; }
+.card { background:var(--surface); border:1px solid var(--border); border-radius:var(--r); box-shadow:var(--shadow); overflow:hidden; }
+.card-head { padding:16px 18px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.card-title { font-size:14px; font-weight:600; }
+.card-sub { font-size:11px; color:var(--text-3); margin-top:2px; }
+.card-body { padding:18px; }
+.chart-tabs { display:flex; gap:4px; background:var(--surface-2); border-radius:8px; padding:3px; }
+.chart-tab { padding:6px 12px; border:none; background:transparent; color:var(--text-2); font-size:12px;
+  cursor:pointer; border-radius:6px; font-family:'Inter',sans-serif; font-weight:500; transition:all .15s; white-space:nowrap; }
+.chart-tab.active { background:var(--surface); color:var(--text); box-shadow:var(--shadow); }
+/* ── 일본식 단일 분석 패널: 탭으로 전환 ── */
+.panel-tabs { display:flex; gap:6px; padding:14px 18px 0; flex-wrap:wrap; border-bottom:1px solid var(--border); }
+.panel-tab { display:flex; align-items:center; gap:7px; padding:9px 14px; border:none; cursor:pointer;
+  background:var(--surface-2); color:var(--text-2); font-size:13px; font-weight:500; font-family:'Inter',sans-serif;
+  border-radius:8px 8px 0 0; transition:all .15s; border:1px solid transparent; border-bottom:none; }
+.panel-tab svg { width:16px; height:16px; flex-shrink:0; }
+.panel-tab:hover { color:var(--text); }
+.panel-tab.active { background:var(--accent); color:#fff; }
+.panel-tab .pt-label { white-space:nowrap; }
+.panel-view { display:none; }
+.panel-view.active { display:block; animation:fadeIn .2s ease; }
+@keyframes fadeIn { from{opacity:0} to{opacity:1} }
+.panel-head { padding:16px 18px 4px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+select { height:38px; padding:0 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface);
+  color:var(--text); font-size:14px; cursor:pointer; outline:none; font-family:'Inter',sans-serif; width:100%; }
+select:focus { border-color:var(--accent); }
+.filter-group { display:flex; flex-direction:column; gap:5px; }
+.filter-group label { font-size:10px; color:var(--text-3); font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
+.map-container { position:relative; display:flex; justify-content:center; padding:8px; }
+#korea-map { width:100%; max-width:360px; height:auto; }
+.province { fill:var(--map-land); stroke:var(--map-stroke); stroke-width:0.5; transition:fill .2s; }
+.prov-cover { transition:fill-opacity .15s, stroke-width .15s; }
+.prov-cover:hover { stroke:var(--text); stroke-width:1.4; fill-opacity:0.92 !important; }
+.office-marker { cursor:pointer; }
+.office-marker circle.halo { transition:r .15s; }
+.office-marker:hover circle.core { stroke-width:2.5; }
+.map-tooltip { position:absolute; pointer-events:none; opacity:0; background:var(--surface);
+  border:1px solid var(--border-strong); border-radius:8px; padding:10px 12px; font-size:12px;
+  box-shadow:0 4px 12px rgba(0,0,0,.15); z-index:50; min-width:150px; transition:opacity .15s; }
+.map-tooltip.show { opacity:1; }
+.mt-name { font-weight:600; margin-bottom:6px; font-size:13px; }
+.mt-sub { color:var(--text-3); font-size:11px; margin-bottom:6px; }
+.mt-row { display:flex; justify-content:space-between; gap:16px; color:var(--text-2); margin-top:3px; }
+.mt-row b { color:var(--text); font-family:'IBM Plex Mono',monospace; }
+.map-legend { display:flex; justify-content:center; gap:16px; padding:12px 18px; border-top:1px solid var(--border); flex-wrap:wrap; }
+.legend-item { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--text-2); }
+.legend-dot { width:10px; height:10px; border-radius:50%; }
+.rank-list { display:flex; flex-direction:column; }
+.rank-row { display:grid; grid-template-columns:20px 64px 1fr 52px; align-items:center; gap:10px;
+  padding:9px 0; border-bottom:1px solid var(--border); cursor:pointer; transition:background .12s; border-radius:6px; }
+.rank-row:hover { background:var(--surface-2); }
+.rank-row.sel { background:var(--accent-soft); }
+.rank-row:last-child { border-bottom:none; }
+.rank-num { font-size:11px; color:var(--text-3); font-family:'IBM Plex Mono',monospace; padding-left:6px; }
+.rank-name { font-size:13px; font-weight:500; }
+.rank-bar-bg { height:6px; background:var(--surface-2); border-radius:3px; overflow:hidden; }
+.rank-bar { height:100%; border-radius:3px; transition:width .8s ease; }
+.rank-val { font-size:13px; font-weight:600; text-align:right; font-family:'IBM Plex Mono',monospace; padding-right:6px; }
+.trend-table { width:100%; border-collapse:collapse; font-size:13px; }
+.trend-table th { text-align:left; padding:10px 12px; color:var(--text-3); font-size:11px; font-weight:600;
+  text-transform:uppercase; letter-spacing:.04em; border-bottom:1px solid var(--border); white-space:nowrap; }
+.trend-table td { padding:11px 12px; border-bottom:1px solid var(--border); }
+.trend-table tr:last-child td { border:none; }
+.trend-table .num { font-family:'IBM Plex Mono',monospace; text-align:right; }
+.trend-table .code { font-weight:600; }
+.chg-up { color:var(--green); font-weight:600; }
+.chg-down { color:var(--red); font-weight:600; }
+.chg-flat { color:var(--text-3); }
+.table-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+
+/* ── Inline Estimator (RetroHazard-style, same-page) ── */
+.estimator { margin-bottom:16px; }
+.est-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px; align-items:end; }
+.est-output { display:grid; grid-template-columns:1.1fr 1fr; gap:16px; margin-top:18px; }
+.est-result { padding:20px; background:var(--surface-2); border-radius:10px; display:flex; flex-direction:column; justify-content:center; }
+.est-result-top { display:flex; align-items:baseline; gap:10px; }
+.est-days { font-size:42px; font-weight:700; font-family:'IBM Plex Mono',monospace; line-height:1; transition:color .25s; }
+.est-unit { font-size:18px; color:var(--text-2); font-weight:600; }
+.est-label { font-size:12px; color:var(--text-2); margin-top:8px; }
+.est-ci { font-size:12px; color:var(--text-3); margin-top:6px; font-family:'IBM Plex Mono',monospace; }
+.est-eta { font-size:13px; margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); }
+.est-eta b { font-family:'IBM Plex Mono',monospace; color:var(--text); }
+.est-bd { display:flex; flex-direction:column; gap:9px; justify-content:center; }
+.est-bd-row { display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:12px; }
+.est-bd-label { color:var(--text-2); display:flex; align-items:center; gap:6px; }
+.est-bd-bar-wrap { flex:1; height:5px; background:var(--surface-2); border-radius:3px; overflow:hidden; max-width:90px; }
+.est-bd-bar { height:100%; border-radius:3px; }
+.est-bd-val { font-family:'IBM Plex Mono',monospace; font-weight:600; min-width:54px; text-align:right; }
+.est-note { font-size:11px; color:var(--text-3); margin-top:10px; line-height:1.5; }
+
+/* ── Visa Forecast table ── */
+.visa-fc-table { width:100%; border-collapse:collapse; font-size:13px; }
+.visa-fc-table th { text-align:left; padding:10px 12px; color:var(--text-3); font-size:11px; font-weight:600;
+  text-transform:uppercase; letter-spacing:.04em; border-bottom:1px solid var(--border); white-space:nowrap; }
+.visa-fc-table td { padding:11px 12px; border-bottom:1px solid var(--border); vertical-align:middle; }
+.visa-fc-table tr:last-child td { border:none; }
+.visa-fc-table tr { transition:background .12s; }
+.visa-fc-table tbody tr:hover { background:var(--surface-2); }
+.vf-code { font-weight:700; font-family:'IBM Plex Mono',monospace; }
+.vf-days { font-family:'IBM Plex Mono',monospace; font-weight:600; }
+.vf-bar-wrap { height:6px; background:var(--surface-2); border-radius:3px; overflow:hidden; width:100px; }
+.vf-bar { height:100%; border-radius:3px; }
+.vf-note { font-size:11px; color:var(--text-3); }
+
+.footer { border-top:1px solid var(--border); margin-top:24px; padding:20px 24px; text-align:center; color:var(--text-3); font-size:12px; }
+.footer .mono { display:inline-block; margin-top:4px; }
+
+/* ── Responsive: desktop → tablet → mobile ── */
+@media(max-width:1000px){
+  .kpi-grid{grid-template-columns:1fr 1fr}
+  .grid-main{grid-template-columns:1fr}
+  .est-grid{grid-template-columns:1fr 1fr}
+  .est-output{grid-template-columns:1fr}
+}
+@media(max-width:600px){
+  .container{padding:16px}
+  .nav{padding:0 14px}
+  .notice{padding:8px 14px}
+  .kpi-grid{grid-template-columns:1fr 1fr; gap:10px}
+  .kpi{padding:14px}
+  .kpi-value{font-size:22px}
+  .nav-title span{display:none}
+  .nav-title{font-size:13px}
+  .est-grid{grid-template-columns:1fr}
+  .page-head h1{font-size:19px}
+  .chart-tab{padding:6px 9px; font-size:11px}
+  .icon-btn span{display:none}
+  .icon-btn{padding:0 9px}
+  .est-days{font-size:34px}
+  .footer{padding:18px 14px}
+}
+</style>
+</head>
+<body data-theme="light">
+
+<nav class="nav">
+  <div class="nav-brand">
+    <div class="nav-mark">出</div>
+    <div class="nav-title" data-i18n="navTitle">출입국 심사 통계 대시보드
+      <span data-i18n="navSub">Korea Immigration Statistics</span></div>
+  </div>
+  <div class="nav-actions">
+    <div class="lang-toggle">
+      <button id="langKo" class="active" onclick="setLang('ko')">KO</button>
+      <button id="langEn" onclick="setLang('en')">EN</button>
+    </div>
+    <button class="icon-btn" onclick="toggleTheme()">
+      <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"></svg>
+      <span id="themeLabel">라이트</span>
+    </button>
+  </div>
+</nav>
+
+<div class="notice">
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+  <span data-i18n="disclaimer">본 대시보드의 수치는 법무부 통계월보 기반 통계적 추정치이며 법적 효력이 없습니다.</span>
+</div>
+
+<div class="container">
+  <div class="page-head">
+    <h1 data-i18n="pageTitle">비자 처리 현황 분석</h1>
+    <p data-i18n="pageDesc">법무부 통계월보 48개월 실측 · OLS 예측 모델 · 2026.04 기준</p>
+  </div>
+
+  <div class="kpi-grid">
+    <div class="kpi">
+      <div class="kpi-top"><span class="kpi-name" data-i18n="kpi1">총 체류외국인</span><span class="kpi-tag tag-real">REAL</span></div>
+      <div class="kpi-value">2,869,641</div>
+      <div class="kpi-delta"><span class="up">▲ 1.3%</span> <span data-i18n="kpiPrev">전월 대비</span></div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-top"><span class="kpi-name" data-i18n="kpi2">처리 예측 (26.06)</span><span class="kpi-tag tag-pred">OLS</span></div>
+      <div class="kpi-value">192,995</div>
+      <div class="kpi-delta mono">±16,048 (95% CI)</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-top"><span class="kpi-name" data-i18n="kpi3">평균 소요일</span><span class="kpi-tag tag-pred">EST</span></div>
+      <div class="kpi-value">6.7<span style="font-size:16px;color:var(--text-2)" data-i18n="days">일</span></div>
+      <div class="kpi-delta" data-i18n="kpi3sub">14개 사무소 평균</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-top"><span class="kpi-name" data-i18n="kpi4">다음 통계 발행</span><span class="kpi-tag tag-warn" id="ddayTag">D-—</span></div>
+      <div class="kpi-value mono" id="ddayValue">—</div>
+      <div class="kpi-delta" data-i18n="kpi4sub">2026.05 통계월보 예정</div>
+    </div>
+  </div>
+
+  <!-- ── INLINE ESTIMATOR (상단 배치, 일본 사이트처럼 같은 페이지에서 즉시 계산) ── -->
+  <div class="card estimator">
+    <div class="card-head">
+      <div><div class="card-title" data-i18n="estTitle">처리 소요일 예측기</div>
+        <div class="card-sub" data-i18n="estSub">사무소 · 비자 · 신청월 선택 → 즉시 예측 (OLS 추세+계절성 + 비자 복잡도)</div></div>
+      <span class="kpi-tag tag-pred">OLS · LIVE</span>
+    </div>
+    <div class="card-body">
+      <div class="est-grid">
+        <div class="filter-group"><label data-i18n="estOffice">관할 사무소</label><select id="estOffice" onchange="calcEstimate()"></select></div>
+        <div class="filter-group"><label data-i18n="estVisa">비자 종류</label><select id="estVisa" onchange="calcEstimate()"></select></div>
+        <div class="filter-group"><label data-i18n="estMonth">신청 월</label><select id="estMonth" onchange="calcEstimate()"></select></div>
+      </div>
+      <div class="est-output">
+        <div class="est-result">
+          <div class="est-result-top">
+            <span class="est-days" id="estDays">—</span>
+            <span class="est-unit" id="estUnit" data-i18n="days">일</span>
+          </div>
+          <div class="est-label" data-i18n="estResult">예상 처리 소요일</div>
+          <div class="est-ci" id="estCI"></div>
+          <div class="est-eta" id="estEta"></div>
+        </div>
+        <div class="est-bd">
+          <div class="est-bd-row">
+            <span class="est-bd-label" data-i18n="bdBase">기준(전국 평균)</span>
+            <span class="est-bd-bar-wrap"><span class="est-bd-bar" id="bdBaseBar" style="background:var(--text-3)"></span></span>
+            <span class="est-bd-val" id="bdBaseVal">—</span>
+          </div>
+          <div class="est-bd-row">
+            <span class="est-bd-label" data-i18n="bdOffice">사무소 가중치</span>
+            <span class="est-bd-bar-wrap"><span class="est-bd-bar" id="bdOfficeBar" style="background:var(--accent)"></span></span>
+            <span class="est-bd-val" id="bdOfficeVal">—</span>
+          </div>
+          <div class="est-bd-row">
+            <span class="est-bd-label" data-i18n="bdVisa">비자 복잡도</span>
+            <span class="est-bd-bar-wrap"><span class="est-bd-bar" id="bdVisaBar" style="background:#7c6df2"></span></span>
+            <span class="est-bd-val" id="bdVisaVal">—</span>
+          </div>
+          <div class="est-bd-row">
+            <span class="est-bd-label" data-i18n="bdSeason">계절 효과</span>
+            <span class="est-bd-bar-wrap"><span class="est-bd-bar" id="bdSeasonBar" style="background:var(--amber)"></span></span>
+            <span class="est-bd-val" id="bdSeasonVal">—</span>
+          </div>
+          <div class="est-note" id="estNote"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 일본식 단일 분석 패널: 상단 탭 6개로 한 상자 안에서 전환 ── -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="panel-tabs" id="panelTabs">
+      <button class="panel-tab active" onclick="switchPanel('trend',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>
+        <span class="pt-label" data-i18n="ptTrend">처리건수 추이</span></button>
+      <button class="panel-tab" onclick="switchPanel('map',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 20l-5.5 2.5V6L9 3.5m0 16.5l6 2.5m-6-2.5V3.5m6 19l5.5-2.5V2.5L15 6m0 16.5V6m0 0L9 3.5"/></svg>
+        <span class="pt-label" data-i18n="ptMap">관할구역 지도</span></button>
+      <button class="panel-tab" onclick="switchPanel('rank',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="14" y2="12"/><line x1="4" y1="18" x2="9" y2="18"/></svg>
+        <span class="pt-label" data-i18n="ptRank">사무소 순위</span></button>
+      <button class="panel-tab" onclick="switchPanel('vf',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="9" x2="9" y2="21"/></svg>
+        <span class="pt-label" data-i18n="ptVf">비자별 예상</span></button>
+      <button class="panel-tab" onclick="switchPanel('visa',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 3v9l6 4"/></svg>
+        <span class="pt-label" data-i18n="ptVisa">비자 구성</span></button>
+      <button class="panel-tab" onclick="switchPanel('season',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="10" width="4" height="11"/><rect x="10" y="4" width="4" height="17"/><rect x="17" y="13" width="4" height="8"/></svg>
+        <span class="pt-label" data-i18n="ptSeason">계절성</span></button>
+      <button class="panel-tab" onclick="switchPanel('long',this)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg>
+        <span class="pt-label" data-i18n="ptLong">장기 트렌드</span></button>
+    </div>
+
+    <!-- 추이 -->
+    <div class="panel-view active" id="pv-trend">
+      <div class="panel-head"><div><div class="card-title" data-i18n="chartTitle">처리건수 추이</div>
+        <div class="card-sub">2022.01 – 2026.10 · <span data-i18n="trendNote">실측 52개월 + OLS 예측 6개월</span></div></div>
+        <span class="kpi-tag tag-real">REAL+OLS</span></div>
+      <div class="card-body"><div style="position:relative;height:340px"><canvas id="mainChart"></canvas></div></div>
+    </div>
+
+    <!-- 지도 -->
+    <div class="panel-view" id="pv-map">
+      <div class="panel-head"><div><div class="card-title" data-i18n="mapTitle">관할구역 · 예상 소요일</div>
+        <div class="card-sub" data-i18n="mapSub">색=관할 사무소(진하기=인구밀도) · 마커=소요일 · 호버 시 관할 인구/면적/밀도</div></div></div>
+      <div class="map-container">
+        <svg id="korea-map" viewBox="0 0 360 460" xmlns="http://www.w3.org/2000/svg"></svg>
+        <div class="map-tooltip" id="mapTooltip"></div>
+      </div>
+      <div class="map-legend">
+        <div class="legend-item"><span class="legend-dot" style="background:var(--green)"></span><span data-i18n="legendLow">소요 6.5일 미만</span></div>
+        <div class="legend-item"><span class="legend-dot" style="background:var(--amber)"></span>6.5–7.2</div>
+        <div class="legend-item"><span class="legend-dot" style="background:var(--red)"></span><span data-i18n="legendHigh">7.2일 이상</span></div>
+        <div class="legend-item" style="opacity:.7"><span class="legend-dot" style="background:linear-gradient(90deg,#7048e8,#4c6ef5)"></span><span data-i18n="legendCover">관할구역(밀도)</span></div>
+      </div>
+    </div>
+
+    <!-- 사무소 순위 -->
+    <div class="panel-view" id="pv-rank">
+      <div class="panel-head"><div><div class="card-title" data-i18n="rankTitle">사무소별 소요일 순위</div>
+        <div class="card-sub" data-i18n="rankSub">행 클릭 시 예측기에 반영</div></div></div>
+      <div class="card-body"><div class="rank-list" id="rankList"></div></div>
+    </div>
+
+    <!-- 비자별 예상 -->
+    <div class="panel-view" id="pv-vf">
+      <div class="panel-head"><div><div class="card-title" data-i18n="vfTitle">비자별 예상 처리기간</div>
+        <div class="card-sub" data-i18n="vfSub">현재 선택 사무소·월 기준</div></div>
+        <span class="kpi-tag tag-pred">EST</span></div>
+      <div class="card-body" style="padding:0 18px 18px">
+        <div class="table-wrap">
+          <table class="visa-fc-table">
+            <thead><tr><th data-i18n="vfThVisa">비자</th><th data-i18n="vfThDays">예상일</th><th></th><th data-i18n="vfThNote">특성</th></tr></thead>
+            <tbody id="vfBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 비자 구성 (도넛) -->
+    <div class="panel-view" id="pv-visa">
+      <div class="panel-head"><div><div class="card-title" data-i18n="tabVisa">비자 구성</div>
+        <div class="card-sub" data-i18n="visaSub">체류 비자 유형별 비중</div></div></div>
+      <div class="card-body"><div style="position:relative;height:340px"><canvas id="visaChart"></canvas></div></div>
+    </div>
+
+    <!-- 계절성 (막대) -->
+    <div class="panel-view" id="pv-season">
+      <div class="panel-head"><div><div class="card-title" data-i18n="tabSeason">계절성</div>
+        <div class="card-sub" data-i18n="seasonSub">월별 처리량 계절 지수 (8월 성수기 최고)</div></div></div>
+      <div class="card-body"><div style="position:relative;height:340px"><canvas id="seasonChart"></canvas></div></div>
+    </div>
+
+    <!-- 비자별 장기 트렌드 -->
+    <div class="panel-view" id="pv-long">
+      <div class="panel-head"><div><div class="card-title" data-i18n="trendTitle">비자별 장기 트렌드</div>
+        <div class="card-sub">2022.01 → 2026.04</div></div>
+        <span class="kpi-tag tag-real">REAL</span></div>
+      <div class="card-body" style="padding:0 18px 18px">
+        <div class="table-wrap">
+          <table class="trend-table">
+            <thead><tr><th data-i18n="thVisa">비자</th><th data-i18n="thName">명칭</th>
+              <th class="num">2022.01</th><th class="num">2026.04</th><th class="num" data-i18n="thChange">변화율</th></tr></thead>
+            <tbody id="trendBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer class="footer">
+  <span data-i18n="footer1">데이터: 법무부 출입국·외국인정책본부 통계월보 (공공누리 1유형)</span><br>
+  <span class="mono">OLS Model · R²=0.958 · MAE 5.1% · 48mo actual (2022.01–2026.04)</span>
+</footer>
+
+<script>
+const I18N = {
+  ko:{ navTitle:'출입국 심사 통계 대시보드',navSub:'Korea Immigration Statistics',
+    disclaimer:'본 대시보드의 수치는 법무부 통계월보 기반 통계적 추정치이며 법적 효력이 없습니다.',
+    pageTitle:'비자 처리 현황 분석',pageDesc:'법무부 통계월보 48개월 실측 · OLS 예측 모델 · 2026.04 기준',
+    kpi1:'총 체류외국인',kpi2:'처리 예측 (26.06)',kpi3:'평균 소요일',kpi4:'다음 통계 발행',
+    kpiPrev:'전월 대비',kpi3sub:'14개 사무소 평균',kpi4sub:'2026.05 통계월보 예정',days:'일',
+    chartTitle:'처리건수 추이',tabTrend:'추이',tabVisa:'비자구성',tabSeason:'계절성',
+    mapTitle:'관할구역 · 예상 소요일',mapSub:'색=관할 사무소(진하기=인구밀도) · 마커=소요일 · 호버 시 관할 인구/면적/밀도',legendLow:'소요 6.5일 미만',legendHigh:'7.2일 이상',legendCover:'관할구역(밀도)',
+    rankTitle:'사무소별 소요일 순위',rankSub:'행 클릭 시 예측기에 반영',
+    estTitle:'처리 소요일 예측기',estSub:'사무소 · 비자 · 신청월 선택 → 즉시 예측 (OLS 추세+계절성 + 비자 복잡도)',
+    estOffice:'관할 사무소',estVisa:'비자 종류',estMonth:'신청 월',estResult:'예상 처리 소요일',
+    bdBase:'기준(전국 평균)',bdOffice:'사무소 가중치',bdVisa:'비자 복잡도',bdSeason:'계절 효과',
+    vfTitle:'비자별 예상 처리기간',vfSub:'현재 선택 사무소·월 기준',vfThVisa:'비자',vfThDays:'예상일',vfThNote:'특성',
+    trendTitle:'비자별 장기 트렌드',thVisa:'비자',thName:'명칭',thChange:'변화율',
+    ptTrend:'처리건수 추이',ptMap:'관할구역 지도',ptRank:'사무소 순위',ptVf:'비자별 예상',ptVisa:'비자 구성',ptSeason:'계절성',ptLong:'장기 트렌드',
+    trendNote:'실측 52개월 + OLS 예측 6개월',visaSub:'체류 비자 유형별 비중',seasonSub:'월별 처리량 계절 지수 (8월 성수기 최고)',
+    themeLight:'라이트',themeDark:'다크',
+    footer1:'데이터: 법무부 출입국·외국인정책본부 통계월보 (공공누리 1유형)',
+    etaLabel:'예상 완료일' },
+  en:{ navTitle:'Immigration Statistics Dashboard',navSub:'Korea Immigration Statistics',
+    disclaimer:'All figures are statistical estimates based on MOJ monthly statistics and have no legal effect.',
+    pageTitle:'Visa Processing Analysis',pageDesc:'48mo actual data · OLS model · As of Apr 2026',
+    kpi1:'Total Foreign Residents',kpi2:'Forecast (Jun 26)',kpi3:'Avg. Days',kpi4:'Next Release',
+    kpiPrev:'vs prev month',kpi3sub:'14 offices avg',kpi4sub:'May 2026 expected',days:'d',
+    chartTitle:'Processing Volume Trend',tabTrend:'Trend',tabVisa:'Visa Mix',tabSeason:'Seasonality',
+    mapTitle:'Service Area · Est. Days',mapSub:'Fill=bureau (opacity=density) · marker=days · hover for population/area/density',legendLow:'< 6.5 days',legendHigh:'≥ 7.2 days',legendCover:'Service area (density)',
+    rankTitle:'Office Ranking',rankSub:'Click a row to load into estimator',
+    estTitle:'Processing Time Estimator',estSub:'Pick office · visa · month → instant estimate (OLS trend+seasonal + visa complexity)',
+    estOffice:'Office',estVisa:'Visa Type',estMonth:'Apply Month',estResult:'Estimated Processing Days',
+    bdBase:'Base (national avg)',bdOffice:'Office weight',bdVisa:'Visa complexity',bdSeason:'Seasonal effect',
+    vfTitle:'Est. Time by Visa Type',vfSub:'For selected office & month',vfThVisa:'Visa',vfThDays:'Days',vfThNote:'Profile',
+    trendTitle:'Visa Long-term Trend',thVisa:'Visa',thName:'Name',thChange:'Change',
+    ptTrend:'Volume Trend',ptMap:'Service Area Map',ptRank:'Office Ranking',ptVf:'By Visa Type',ptVisa:'Visa Mix',ptSeason:'Seasonality',ptLong:'Long-term Trend',
+    trendNote:'52mo actual + 6mo OLS forecast',visaSub:'Share by residence visa type',seasonSub:'Monthly seasonal index (Aug peak)',
+    themeLight:'Light',themeDark:'Dark',
+    footer1:'Data: MOJ Immigration Statistics (KOGL Type 1)',
+    etaLabel:'Est. completion' }
+};
+let curLang='ko';
+const OFFICE_NAMES = {
+  서울:{ko:'서울',en:'Seoul'},인천:{ko:'인천',en:'Incheon'},수원:{ko:'수원',en:'Suwon'},
+  안산:{ko:'안산',en:'Ansan'},춘천:{ko:'춘천',en:'Chuncheon'},청주:{ko:'청주',en:'Cheongju'},
+  대전:{ko:'대전',en:'Daejeon'},전주:{ko:'전주',en:'Jeonju'},광주:{ko:'광주',en:'Gwangju'},
+  대구:{ko:'대구',en:'Daegu'},부산:{ko:'부산',en:'Busan'},울산:{ko:'울산',en:'Ulsan'},
+  창원:{ko:'창원',en:'Changwon'},제주:{ko:'제주',en:'Jeju'}
+};
+const MONTH_NAMES = { ko:['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'],
+  en:['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] };
+
+function setLang(lang){
+  curLang=lang;
+  document.getElementById('langKo').classList.toggle('active',lang==='ko');
+  document.getElementById('langEn').classList.toggle('active',lang==='en');
+  document.documentElement.lang=lang;
+  document.querySelectorAll('[data-i18n]').forEach(el=>{
+    const k=el.dataset.i18n;
+    if(I18N[lang][k]){
+      if(el.querySelector('span[data-i18n]')){
+        el.childNodes[0].textContent=I18N[lang][k]+' '; return;
+      }
+      el.textContent=I18N[lang][k];
+    }
+  });
+  updateThemeLabel(); rebuildAll();
+}
+
+let curTheme = matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';
+function applyTheme(t){
+  curTheme=t; document.body.setAttribute('data-theme',t);
+  const ic=document.getElementById('themeIcon');
+  ic.innerHTML = t==='dark'
+    ? '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>'
+    : '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.2" y1="4.2" x2="5.6" y2="5.6"/><line x1="18.4" y1="18.4" x2="19.8" y2="19.8"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.2" y1="19.8" x2="5.6" y2="18.4"/><line x1="18.4" y1="5.6" x2="19.8" y2="4.2"/>';
+  updateThemeLabel(); rebuildAll();
+}
+function updateThemeLabel(){ document.getElementById('themeLabel').textContent = curTheme==='dark'?I18N[curLang].themeDark:I18N[curLang].themeLight; }
+function toggleTheme(){ applyTheme(curTheme==='dark'?'light':'dark'); }
+
+const OFFICES = {
+  서울:{share:0.35,wf:1.05,lat:37.566,lon:126.978}, 인천:{share:0.10,wf:0.98,lat:37.456,lon:126.705},
+  수원:{share:0.12,wf:1.02,lat:37.263,lon:127.029}, 안산:{share:0.08,wf:1.15,lat:37.322,lon:126.831},
+  춘천:{share:0.01,wf:1.12,lat:37.881,lon:127.730}, 청주:{share:0.03,wf:0.94,lat:36.642,lon:127.489},
+  대전:{share:0.04,wf:0.94,lat:36.350,lon:127.385}, 전주:{share:0.03,wf:1.00,lat:35.824,lon:127.148},
+  광주:{share:0.05,wf:0.98,lat:35.160,lon:126.851}, 대구:{share:0.06,wf:0.96,lat:35.872,lon:128.601},
+  부산:{share:0.07,wf:1.02,lat:35.180,lon:129.075}, 울산:{share:0.03,wf:0.98,lat:35.539,lon:129.311},
+  창원:{share:0.02,wf:0.98,lat:35.228,lon:128.681}, 제주:{share:0.01,wf:1.10,lat:33.499,lon:126.531}
+};
+
+// ── 관할구역(Service Area) 데이터: 시도→사무소, 인구·면적·밀도 ──
+// 출처: 행정안전부 주민등록인구(2025) · 국토교통부 행정구역면적. 관할 분담은 출입국·외국인청 관할 근사.
+const SIDO_OFFICE = {  // GeoJSON 시도명(부분일치 키) → 관할 사무소
+  '서울':'서울','인천':'인천','경기':'수원','강원':'춘천','충청북':'청주','충북':'청주',
+  '충청남':'대전','충남':'대전','대전':'대전','세종':'대전','전라북':'전주','전북':'전주',
+  '전라남':'광주','전남':'광주','광주':'광주','대구':'대구','경상북':'대구','경북':'대구',
+  '부산':'부산','울산':'울산','경상남':'창원','경남':'창원','제주':'제주'
+};
+// 사무소별 관할 집계 (인구 명, 면적 km²) — 경기는 수원/안산 분담 반영
+const COVERAGE = {
+  서울:{pop:9386000,area:605,sido:['서울']}, 인천:{pop:3010000,area:1067,sido:['인천']},
+  수원:{pop:10222500,area:7647,sido:['경기 북부']}, 안산:{pop:3407500,area:2548,sido:['경기 남부']},
+  춘천:{pop:1521000,area:16830,sido:['강원']}, 청주:{pop:1591000,area:7407,sido:['충북']},
+  대전:{pop:3952000,area:9250,sido:['충남·대전·세종']}, 전주:{pop:1751000,area:8069,sido:['전북']},
+  광주:{pop:3208000,area:12849,sido:['전남·광주']}, 대구:{pop:4928000,area:20533,sido:['대구·경북']},
+  부산:{pop:3293000,area:770,sido:['부산']}, 울산:{pop:1103000,area:1062,sido:['울산']},
+  창원:{pop:3251000,area:10540,sido:['경남']}, 제주:{pop:672000,area:1850,sido:['제주']}
+};
+function coverageDensity(name){ const c=COVERAGE[name]; return c?c.pop/c.area:0; }
+// 사무소별 고유 관할 색상 (choropleth) — 데이터 식별용, 채도 절제
+const OFFICE_HUE = {
+  서울:'#4c6ef5',인천:'#15aabf',수원:'#7048e8',안산:'#9c6ade',춘천:'#0ca678',청주:'#66a80f',
+  대전:'#1098ad',전주:'#37b24d',광주:'#74b816',대구:'#f59f00',부산:'#e8590c',울산:'#e64980',
+  창원:'#f08c00',제주:'#22b8cf'
+};
+function sidoToOffice(rawName){
+  if(!rawName) return null;
+  for(const k in SIDO_OFFICE){ if(rawName.indexOf(k)>=0) return SIDO_OFFICE[k]; }
+  return null;
+}
+
+// 비자별 처리 복잡도 모델 (mult = 전국 평균 대비 상대 처리난이도)
+const VISA_MODEL = {
+  F4:{ko:'재외동포',en:'Overseas Korean',mult:0.92,trend:'+8.2%',note_ko:'서류 표준화 → 처리 빠름',note_en:'Standardized docs'},
+  E9:{ko:'비전문취업',en:'Non-prof. Work',mult:1.04,trend:'+8.5%',note_ko:'고용허가제 연계 검증',note_en:'EPS verification'},
+  D2:{ko:'유학',en:'Study',mult:1.18,trend:'+48.1%',note_ko:'3~4월 집중 → 봄철 병목',note_en:'Spring bottleneck'},
+  F5:{ko:'영주',en:'Permanent',mult:1.32,trend:'+19.6%',note_ko:'요건 심사 복잡 → 최장',note_en:'Complex review (longest)'},
+  F6:{ko:'결혼이민',en:'Marriage',mult:1.15,trend:'+9.2%',note_ko:'진정성 심사 포함',note_en:'Authenticity check'},
+  E7:{ko:'특정활동',en:'Special Activity',mult:1.22,trend:'+78.4%',note_ko:'전문인력 자격 검증·급증',note_en:'Skill review, surging'},
+  D4:{ko:'일반연수',en:'Training',mult:1.05,trend:'+23.1%',note_ko:'연수기관 확인',note_en:'Institution check'},
+  F2:{ko:'거주',en:'Residence',mult:1.10,trend:'+28.1%',note_ko:'점수제 평가',note_en:'Points-based'},
+  H2:{ko:'방문취업',en:'Working Visit',mult:0.95,trend:'-45.2%',note_ko:'쿼터 축소·신청 급감',note_en:'Quota collapse'}
+};
+const VISA_ORDER=['F4','E9','D2','F5','F6','E7','D4','F2','H2'];
+
+const TREND_LABELS=['22.01','22.02','22.03','22.04','22.05','22.06','22.07','22.08','22.09','22.10','22.11','22.12','23.01','23.02','23.03','23.04','23.05','23.06','23.07','23.08','23.09','23.10','23.11','23.12','24.01','24.02','24.03','24.04','24.05','24.06','24.07','24.08','24.09','24.10','24.11','24.12','25.01','25.02','25.03','25.04','25.05','25.06','25.07','25.08','25.09','25.10','25.11','25.12','26.01','26.02','26.03','26.04','26.05','26.06','26.07','26.08','26.09','26.10'];
+const TREND_REAL=[8077,9891,9725,12565,17071,21916,25541,30236,32025,44626,43192,50231,41799,46332,75410,82829,81240,89897,96926,103702,102478,114880,103317,96264,83219,98959,138943,172489,131609,131550,131236,146991,136907,148178,126150,117941,105067,109366,150249,157813,151219,150178,160716,170280,157554,162234,126138,140400,105043,104182,190049,186948,null,null,null,null,null,null];
+const TREND_PRED=[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,186948,190476,192995,198746,209444,201433,210884];
+const TREND_HI=[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,204730,207249,213000,223699,215687,225138];
+const TREND_LO=[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,176221,178740,184491,195189,187178,196629];
+const TREND_INTERP=[false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,true,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false,true,false,true,true,false,false,false,false,false,false,false,false];
+const VISA_TREND=[
+  {code:'E7',ko:'특정활동',en:'Special Activity',v1:47440,v2:84633},
+  {code:'D2',ko:'유학',en:'Study',v1:163067,v2:241458},
+  {code:'F2',ko:'거주',en:'Residence',v1:54289,v2:69520},
+  {code:'D4',ko:'일반연수',en:'Training',v1:69601,v2:85704},
+  {code:'F5',ko:'영주',en:'Permanent',v1:188184,v2:225090},
+  {code:'F6',ko:'결혼이민',en:'Marriage',v1:143386,v2:156584},
+  {code:'F4',ko:'재외동포',en:'Overseas Korean',v1:538717,v2:582808},
+  {code:'E9',ko:'비전문취업',en:'Non-prof.Work',v1:320643,v2:347735},
+  {code:'H2',ko:'방문취업',en:'Working Visit',v1:100119,v2:54823}
+];
+const VISA_MIX=[
+  {ko:'F4 재외동포',en:'F4 Overseas',val:20.19},{ko:'E9 비전문취업',en:'E9 Non-prof.',val:12.46},
+  {ko:'D2 유학',en:'D2 Study',val:8.27},{ko:'F5 영주',en:'F5 Permanent',val:7.99},
+  {ko:'F6 결혼',en:'F6 Marriage',val:5.59},{ko:'기타',en:'Others',val:45.50}
+];
+const SEASON=[0.605,0.672,1.147,1.118,0.968,1.000,1.053,1.146,1.090,1.194,0.924,1.028];
+const MONTH_EFF={1:0,2:5389,3:42119,4:38748,5:34386,6:34103,7:37052,8:44948,9:34135,10:40784,11:27297,12:12551};
+const PRED_JUN=192995, RMSE=16048, ALPHA=78000, BETA=2802;
+
+// 월별 계절 소요일 보정 (계절성 지수 → 소요일 가산, 평균 0 부근)
+function seasonDayAdj(month){ return (SEASON[month-1]-1.0)*1.6; }
+
+function cssVar(n){ return getComputedStyle(document.body).getPropertyValue(n).trim(); }
+function dayColor(d){ return d>=7.2?cssVar('--red'):d>=6.5?cssVar('--amber'):cssVar('--green'); }
+function officeStats(name){
+  const o=OFFICES[name], proc=PRED_JUN*o.share, pending=proc*0.22*o.wf;
+  return { days:Math.round((pending/proc)*30*10)/10, proc:Math.round(proc), pending:Math.round(pending) };
+}
+// 사무소+비자+월 통합 소요일
+function estDaysFull(office,visa,month){
+  const base=6.6;                          // 전국 기준
+  const wf=OFFICES[office].wf;
+  const officeAdj=base*(wf-1.0);           // 사무소 가중치 효과
+  const visaMult=VISA_MODEL[visa].mult;
+  const visaAdj=base*(visaMult-1.0);       // 비자 복잡도 효과
+  const seasonAdj=seasonDayAdj(month);     // 계절 효과
+  const days=base+officeAdj+visaAdj+seasonAdj;
+  return {days, base, officeAdj, visaAdj, seasonAdj};
+}
+
+/* ── 정밀 지도 (d3 + southkorea-maps TopoJSON, 실패 시 좌표 근사 fallback) ── */
+let MAP_GEO=null, MAP_READY=false;
+const GEO_URL='https://cdn.jsdelivr.net/gh/southkorea/southkorea-maps@master/kostat/2013/json/skorea-provinces-2013-topo.json';
+async function loadMap(){
+  try{
+    const res=await fetch(GEO_URL);
+    if(!res.ok) throw new Error('geo fetch failed');
+    const topo=await res.json();
+    const key=Object.keys(topo.objects)[0];
+    MAP_GEO=topojson.feature(topo,topo.objects[key]);
+    MAP_READY=true;
+  }catch(e){ MAP_READY=false; }
+  renderMap();
+}
+function renderMap(){
+  const svg=document.getElementById('korea-map');
+  const W=360,H=460;
+  if(MAP_READY && MAP_GEO && window.d3){
+    const proj=d3.geoMercator().fitExtent([[14,14],[W-14,H-30]],MAP_GEO);
+    const path=d3.geoPath().projection(proj);
+    const stroke=cssVar('--map-stroke'), land=cssVar('--map-land');
+    let html='';
+    // 1) 관할권 색칠: 각 시도를 관할 사무소 색으로 (밝기는 인구밀도 정규화)
+    const dens=Object.keys(COVERAGE).map(coverageDensity);
+    const dMax=Math.max(...dens), dMin=Math.min(...dens);
+    MAP_GEO.features.forEach(f=>{
+      const props=f.properties||{};
+      let nm=props.name||props.NAME_1||props.name_eng||props.CTP_KOR_NM||'';
+      let off=sidoToOffice(nm);
+      if(!off){ // 키 이름이 다를 경우: 모든 문자열 값에서 시도명 탐색
+        for(const k in props){ const v=props[k]; if(typeof v==='string'){ const o=sidoToOffice(v); if(o){ off=o; nm=v; break; } } }
+      }
+      let fill=land, op=1;
+      if(off){
+        fill=OFFICE_HUE[off]||land;
+        const d=coverageDensity(off);
+        op=0.30+0.55*((Math.log(d)-Math.log(dMin))/(Math.log(dMax)-Math.log(dMin)));
+      }
+      const safeNm=String(nm).replace(/'/g,'');
+      html+=`<path class="prov-cover" d="${path(f)}" fill="${fill}" fill-opacity="${off?op.toFixed(2):1}" stroke="${stroke}" stroke-width="0.5"
+        ${off?`data-off="${off}" onmouseenter="showCoverTT(event,'${off}','${safeNm}')" onmouseleave="hideMapTT()" onclick="loadOffice('${off}')" style="cursor:pointer"`:''}/>`;
+    });
+    // 2) 사무소 마커 (관할권 위에 표시)
+    Object.entries(OFFICES).forEach(([name,o])=>{
+      const p=proj([o.lon,o.lat]); if(!p) return;
+      const s=officeStats(name),color=dayColor(s.days),r=5+Math.sqrt(o.share)*20;
+      html+=markerSVG(name,p[0],p[1],r,color);
+    });
+    svg.innerHTML=html;
+  } else {
+    renderMapFallback(svg);
+  }
+}
+function markerSVG(name,x,y,r,color){
+  const label=(r>9)?`<text x="${x}" y="${y+3}" text-anchor="middle" font-size="9" fill="#fff" font-weight="600" style="pointer-events:none;font-family:IBM Plex Mono">${OFFICE_NAMES[name][curLang]}</text>`:'';
+  return `<g class="office-marker" onmouseenter="showMapTT(event,'${name}')" onmouseleave="hideMapTT()" onclick="loadOffice('${name}')">
+    <circle class="halo" cx="${x}" cy="${y}" r="${r+4}" fill="${color}" opacity="0.15"/>
+    <circle class="core" cx="${x}" cy="${y}" r="${r}" fill="${color}" opacity="0.88" stroke="${cssVar('--surface')}" stroke-width="1.5"/>
+    ${label}</g>`;
+}
+// 네트워크 차단 시: 좌표 근사 fallback (이전 버전 호환)
+function mercatorFallback(lat,lon){
+  const W=360,H=410,latMin=33.0,latMax=38.7,lonMin=125.5,lonMax=131.0;
+  const x=(lon-lonMin)/(lonMax-lonMin)*W;
+  const my=l=>Math.log(Math.tan(Math.PI/4+l*Math.PI/360));
+  const yMin=my(latMin),yMax=my(latMax);
+  const y=H-(my(lat)-yMin)/(yMax-yMin)*H+24;
+  return [x,y];
+}
+const FB_PATHS=[
+  "M124,38 L200,40 L205,58 L196,82 L162,86 L126,77 L115,55 Z",
+  "M200,40 L243,72 L266,100 L244,118 L216,108 L196,82 L205,58 Z",
+  "M115,55 L162,86 L164,128 L135,138 L101,124 L88,88 L86,66 Z",
+  "M162,86 L216,108 L219,143 L188,156 L164,128 Z",
+  "M216,108 L266,134 L268,180 L241,192 L219,170 L219,143 Z",
+  "M135,138 L188,156 L192,192 L165,210 L133,201 L115,174 Z",
+  "M115,174 L165,210 L174,259 L142,277 L106,268 L93,232 L102,196 Z",
+  "M219,170 L268,180 L263,214 L250,241 L223,250 L200,228 L219,192 Z"];
+const FB_OUTLINE="M124,38 L135,31 L151,34 L162,29 L178,35 L189,30 L200,40 L216,56 L236,62 L243,72 L259,90 L266,100 L270,120 L277,146 L277,172 L270,188 L261,196 L261,238 L250,247 L241,262 L229,271 L224,290 L214,283 L205,292 L193,286 L184,295 L175,288 L166,299 L154,292 L146,303 L135,296 L127,283 L112,283 L107,266 L115,253 L106,241 L110,196 L101,180 L106,135 L97,120 L104,103 L97,86 L106,71 L101,56 L113,42 Z";
+// fallback path를 권역 사무소에 근사 배정 (수도권/강원/충청/호남/영남 등)
+const FB_OFFICE=['서울','수원','춘천','대전','대구','전주','광주','부산'];
+function renderMapFallback(svg){
+  const stroke=cssVar('--map-stroke'), land=cssVar('--map-land');
+  let html='';
+  FB_PATHS.forEach((p,i)=>{
+    const off=FB_OFFICE[i]; const fill=off?(OFFICE_HUE[off]||land):land;
+    html+=`<path d="${p}" fill="${fill}" fill-opacity="${off?0.55:1}" stroke="${stroke}" stroke-width="0.5"
+      ${off?`onmouseenter="showCoverTT(event,'${off}','${off}')" onmouseleave="hideMapTT()" onclick="loadOffice('${off}')" style="cursor:pointer"`:''}/>`;
+  });
+  html+=`<path d="${FB_OUTLINE}" fill="none" stroke="${stroke}" stroke-width="1.3" opacity="0.5"/>`;
+  html+=`<ellipse cx="72" cy="410" rx="30" ry="14" fill="${OFFICE_HUE['제주']}" fill-opacity="0.55" stroke="${stroke}" onmouseenter="showCoverTT(event,'제주','제주')" onmouseleave="hideMapTT()" onclick="loadOffice('제주')" style="cursor:pointer"/>`;
+  Object.entries(OFFICES).forEach(([name,o])=>{
+    let [x,y]=mercatorFallback(o.lat,o.lon);
+    if(name==='제주'){ x=72; y=410; }
+    const s=officeStats(name),color=dayColor(s.days),r=5+Math.sqrt(o.share)*20;
+    html+=markerSVG(name,x,y,r,color);
+  });
+  svg.innerHTML=html;
+}
+const mapTT=document.getElementById('mapTooltip');
+function showMapTT(e,name){
+  const s=officeStats(name),L=curLang;
+  mapTT.innerHTML=`<div class="mt-name">${OFFICE_NAMES[name][L]} ${L==='ko'?'사무소':'Office'}</div>
+    <div class="mt-row"><span>${L==='ko'?'예상 소요일':'Est. days'}</span><b>${s.days}${I18N[L].days}</b></div>
+    <div class="mt-row"><span>${L==='ko'?'월 처리건수':'Monthly'}</span><b>${s.proc.toLocaleString()}</b></div>
+    <div class="mt-row"><span>${L==='ko'?'대기건수':'Pending'}</span><b>${s.pending.toLocaleString()}</b></div>`;
+  const cont=document.querySelector('.map-container').getBoundingClientRect();
+  mapTT.style.left=(e.clientX-cont.left+12)+'px';
+  mapTT.style.top=(e.clientY-cont.top-20)+'px';
+  mapTT.classList.add('show');
+}
+function hideMapTT(){ mapTT.classList.remove('show'); }
+// 관할권(Service Area) 툴팁 — 일본 RetroHazard 'Service Area Coverage/Density' 대응
+function showCoverTT(e,off,sidoName){
+  const c=COVERAGE[off],L=curLang; if(!c) return;
+  const dens=(c.pop/c.area);
+  mapTT.innerHTML=`<div class="mt-name">${OFFICE_NAMES[off][L]} ${L==='ko'?'관할':'Bureau'}</div>
+    <div class="mt-sub">${L==='ko'?'관할 구역':'Service area'}: ${c.sido.join(', ')}</div>
+    <div class="mt-row"><span>${L==='ko'?'관할 인구':'Population'}</span><b>${c.pop.toLocaleString()}</b></div>
+    <div class="mt-row"><span>${L==='ko'?'관할 면적':'Area'}</span><b>${c.area.toLocaleString()} km²</b></div>
+    <div class="mt-row"><span>${L==='ko'?'인구 밀도':'Density'}</span><b>${dens.toFixed(1)} /km²</b></div>`;
+  positionTT(e);
+}
+function positionTT(e){
+  const cont=document.querySelector('.map-container').getBoundingClientRect();
+  mapTT.style.left=(e.clientX-cont.left+12)+'px';
+  mapTT.style.top=(e.clientY-cont.top-20)+'px';
+  mapTT.classList.add('show');
+}
+function loadOffice(name){ document.getElementById('estOffice').value=name; calcEstimate(); renderRanking();
+  document.querySelector('.estimator').scrollIntoView({behavior:'smooth',block:'center'}); }
+
+let chartTrend=null,chartVisa=null,chartSeason=null,curPanel='trend';
+function chartBase(){ const grid=cssVar('--border');
+  Chart.defaults.color=cssVar('--text-2'); Chart.defaults.font.family='Inter,sans-serif'; Chart.defaults.font.size=11;
+  return {grid, tt:{backgroundColor:cssVar('--surface'),titleColor:cssVar('--text'),bodyColor:cssVar('--text-2'),borderColor:cssVar('--border-strong'),borderWidth:1,padding:10}};
+}
+function buildTrend(){ if(typeof Chart==='undefined')return; const {grid,tt}=chartBase();
+  if(chartTrend) chartTrend.destroy();
+  chartTrend=new Chart(document.getElementById('mainChart'),{type:'line',data:{labels:TREND_LABELS,datasets:[
+    {label:'CI상한',data:TREND_HI,borderWidth:0,pointRadius:0,fill:'+1',backgroundColor:cssVar('--accent-soft'),tension:0.4,order:4},
+    {label:'CI하한',data:TREND_LO,borderWidth:0,pointRadius:0,fill:false,tension:0.4,order:5},
+    {label:curLang==='ko'?'실측':'Actual',data:TREND_REAL,borderColor:cssVar('--green'),backgroundColor:TREND_INTERP.map(ip=>ip?cssVar('--amber'):cssVar('--green')),borderWidth:2.5,pointRadius:TREND_REAL.map((v,i)=>v==null?0:(TREND_INTERP[i]?4:2)),pointStyle:TREND_REAL.map((v,i)=>TREND_INTERP[i]?'triangle':'circle'),pointHoverRadius:6,tension:0.3,spanGaps:false,order:1},
+    {label:curLang==='ko'?'OLS 예측':'OLS Forecast',data:TREND_PRED,borderColor:cssVar('--accent'),backgroundColor:cssVar('--accent'),borderWidth:2.5,borderDash:[6,4],pointRadius:TREND_PRED.map(v=>v==null?0:4),pointStyle:'rectRot',tension:0.3,spanGaps:false,order:2}
+  ]},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+    plugins:{legend:{display:true,position:'top',align:'end',labels:{filter:i=>!i.text.includes('CI'),boxWidth:10,boxHeight:10,padding:14,usePointStyle:true}},
+      tooltip:{...tt,callbacks:{label:i=>i.raw==null?null:`${i.dataset.label}: ${i.raw.toLocaleString()}`,afterLabel:i=>(i.datasetIndex===2&&TREND_INTERP[i.dataIndex])?(curLang==='ko'?'(보간 추정치)':'(interpolated)'):null}}},
+    scales:{x:{grid:{color:grid},ticks:{maxTicksLimit:12,autoSkip:true}},y:{grid:{color:grid},ticks:{callback:v=>(v/1000)+'K'}}}}});
+}
+function buildVisa(){ if(typeof Chart==='undefined')return; const {tt}=chartBase();
+  if(chartVisa) chartVisa.destroy();
+  chartVisa=new Chart(document.getElementById('visaChart'),{type:'doughnut',data:{labels:VISA_MIX.map(v=>v[curLang]),
+    datasets:[{data:VISA_MIX.map(v=>v.val),backgroundColor:[cssVar('--accent'),cssVar('--green'),'#7c6df2',cssVar('--amber'),'#e8638a',cssVar('--text-3')],borderWidth:2,borderColor:cssVar('--surface')}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'62%',
+      plugins:{legend:{position:'right',labels:{boxWidth:12,padding:10,usePointStyle:true}},
+        tooltip:{...tt,callbacks:{label:i=>`${i.label}: ${i.raw}%`}}}}});
+}
+function buildSeason(){ if(typeof Chart==='undefined')return; const {grid,tt}=chartBase();
+  if(chartSeason) chartSeason.destroy();
+  chartSeason=new Chart(document.getElementById('seasonChart'),{type:'bar',data:{labels:MONTH_NAMES[curLang],
+    datasets:[{label:'idx',data:SEASON,backgroundColor:SEASON.map(v=>v>=1.1?cssVar('--red'):v>=0.95?cssVar('--amber'):cssVar('--green')),borderRadius:5,borderSkipped:false}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{...tt,callbacks:{label:i=>`${curLang==='ko'?'지수':'Index'}: ${i.raw.toFixed(3)}`}}},
+      scales:{x:{grid:{display:false}},y:{grid:{color:grid},min:0.5,ticks:{callback:v=>v.toFixed(1)}}}}});
+}
+function rebuildCharts(){ buildTrend(); buildVisa(); buildSeason(); }
+// 패널 전환 (일본식 단일 컨테이너)
+function switchPanel(name,btn){ curPanel=name;
+  document.querySelectorAll('.panel-tab').forEach(t=>t.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('.panel-view').forEach(v=>v.classList.remove('active'));
+  document.getElementById('pv-'+name).classList.add('active');
+  // 차트는 보이게 된 뒤 리사이즈 필요
+  if(name==='trend'&&chartTrend) chartTrend.resize();
+  if(name==='visa'&&chartVisa) chartVisa.resize();
+  if(name==='season'&&chartSeason) chartSeason.resize();
+  if(name==='map') renderMap();
+}
+
+function renderRanking(){
+  const list=document.getElementById('rankList');
+  const sel=document.getElementById('estOffice').value;
+  const ranked=Object.keys(OFFICES).map(name=>({name,...officeStats(name)})).sort((a,b)=>b.days-a.days);
+  const max=ranked[0].days;
+  list.innerHTML=ranked.map((o,i)=>{ const c=dayColor(o.days);
+    return `<div class="rank-row ${o.name===sel?'sel':''}" onclick="loadOffice('${o.name}')"><span class="rank-num">${i+1}</span>
+      <span class="rank-name">${OFFICE_NAMES[o.name][curLang]}</span>
+      <div class="rank-bar-bg"><div class="rank-bar" style="width:${o.days/max*100}%;background:${c}"></div></div>
+      <span class="rank-val" style="color:${c}">${o.days}${I18N[curLang].days}</span></div>`;
+  }).join('');
+}
+
+function populateEst(){
+  const eo=document.getElementById('estOffice');
+  const cur=eo.value||'서울';
+  eo.innerHTML=Object.keys(OFFICES).map(n=>`<option value="${n}">${OFFICE_NAMES[n][curLang]}</option>`).join('');
+  eo.value=cur;
+  const ev=document.getElementById('estVisa');
+  const curV=ev.value||'F4';
+  ev.innerHTML=VISA_ORDER.map(code=>`<option value="${code}">${code} · ${VISA_MODEL[code][curLang]}</option>`).join('');
+  ev.value=curV;
+  const sm=document.getElementById('estMonth');
+  const curM=sm.value||6;
+  sm.innerHTML=MONTH_NAMES[curLang].map((m,i)=>`<option value="${i+1}">${m}</option>`).join('');
+  sm.value=curM;
+}
+function calcEstimate(){
+  const office=document.getElementById('estOffice').value;
+  const visa=document.getElementById('estVisa').value;
+  const mo=parseInt(document.getElementById('estMonth').value);
+  const r=estDaysFull(office,visa,mo);
+  const days=r.days;
+  const c=dayColor(days);
+  const L=curLang;
+  const el=document.getElementById('estDays');
+  el.textContent=days.toFixed(1); el.style.color=c;
+  document.getElementById('estUnit').textContent=I18N[L].days;
+  const ci=RMSE/PRED_JUN*days;
+  document.getElementById('estCI').textContent=`95% CI: ±${ci.toFixed(1)}${I18N[L].days}`;
+  // 예상 완료일
+  const eta=new Date(); eta.setDate(eta.getDate()+Math.round(days));
+  const etaStr=eta.toLocaleDateString(L==='ko'?'ko-KR':'en-US',{month:'short',day:'numeric'});
+  document.getElementById('estEta').innerHTML=`${I18N[L].etaLabel}: <b>${etaStr}</b>`;
+  // breakdown bars (절대값 기준 폭)
+  const fmt=v=>(v>=0?'+':'')+v.toFixed(1);
+  const maxMag=Math.max(1.0,Math.abs(r.officeAdj),Math.abs(r.visaAdj),Math.abs(r.seasonAdj));
+  document.getElementById('bdBaseVal').textContent=r.base.toFixed(1);
+  document.getElementById('bdBaseBar').style.width='100%';
+  document.getElementById('bdOfficeVal').textContent=fmt(r.officeAdj);
+  document.getElementById('bdOfficeBar').style.width=(Math.abs(r.officeAdj)/maxMag*100)+'%';
+  document.getElementById('bdVisaVal').textContent=fmt(r.visaAdj);
+  document.getElementById('bdVisaBar').style.width=(Math.abs(r.visaAdj)/maxMag*100)+'%';
+  document.getElementById('bdSeasonVal').textContent=fmt(r.seasonAdj);
+  document.getElementById('bdSeasonBar').style.width=(Math.abs(r.seasonAdj)/maxMag*100)+'%';
+  document.getElementById('estNote').textContent='※ '+VISA_MODEL[visa]['note_'+L];
+  renderVisaForecast(office,mo);
+}
+
+// 비자별 예상 처리기간 테이블 (현재 사무소·월 기준)
+function renderVisaForecast(office,month){
+  const rows=VISA_ORDER.map(code=>{
+    const r=estDaysFull(office,code,month);
+    return {code,days:r.days};
+  }).sort((a,b)=>a.days-b.days);
+  const max=Math.max(...rows.map(r=>r.days));
+  const L=curLang;
+  document.getElementById('vfBody').innerHTML=rows.map(r=>{
+    const c=dayColor(r.days), m=VISA_MODEL[r.code];
+    const tcls=m.trend.startsWith('+')?'chg-up':m.trend.startsWith('-')?'chg-down':'chg-flat';
+    return `<tr>
+      <td><span class="vf-code">${r.code}</span> <span class="vf-note">${m[L]}</span></td>
+      <td><span class="vf-days" style="color:${c}">${r.days.toFixed(1)}${I18N[L].days}</span></td>
+      <td><div class="vf-bar-wrap"><div class="vf-bar" style="width:${r.days/max*100}%;background:${c}"></div></div></td>
+      <td><span class="vf-note">${m['note_'+L]}</span> <span class="${tcls}" style="font-size:11px">${m.trend}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+function renderTrend(){
+  document.getElementById('trendBody').innerHTML=VISA_TREND.map(v=>{
+    const chg=(v.v2-v.v1)/v.v1*100, cls=chg>5?'chg-up':chg<-5?'chg-down':'chg-flat', a=chg>5?'↑':chg<-5?'↓':'→';
+    return `<tr><td class="code">${v.code}</td><td>${v[curLang]}</td>
+      <td class="num">${v.v1.toLocaleString()}</td><td class="num">${v.v2.toLocaleString()}</td>
+      <td class="num ${cls}">${chg>0?'+':''}${chg.toFixed(1)}% ${a}</td></tr>`;
+  }).join('');
+}
+function calcDday(){
+  const diff=Math.ceil((new Date(2026,4,25)-new Date())/86400000);
+  document.getElementById('ddayValue').textContent=diff>0?`D-${diff}`:'발행';
+  document.getElementById('ddayTag').textContent=diff>0?`D-${diff}`:'NEW';
+}
+function rebuildAll(){ renderMap(); rebuildCharts(); renderRanking(); populateEst(); calcEstimate(); renderTrend(); }
+
+applyTheme(curTheme); setLang('ko'); calcDday(); loadMap();
+</script>
+</body>
+</html>
